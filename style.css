@@ -448,6 +448,13 @@ body {
 .btn-buy:hover:not(:disabled), .btn-sell:hover:not(:disabled) { filter: brightness(1.12); }
 
 /* ── PORTFOLIO ───────────────────────────────────── */
+.pf-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
 .pstats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

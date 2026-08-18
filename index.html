@@ -55,6 +55,11 @@
 
   <!-- PORTFOLIO TAB -->
   <div id="tab-portfolio" class="view">
+    <div class="pf-toolbar">
+      <input type="file" id="import-input" accept="application/json" style="display:none" onchange="handleImportFile(event)">
+      <button class="btn-reset" onclick="document.getElementById('import-input').click()">⬆ Import Backup</button>
+      <button class="btn-reset" onclick="exportBackup()">⬇ Export Backup</button>
+    </div>
     <div class="pstats" id="p-stats"></div>
     <div id="p-chart"></div>
     <div id="p-holdings"></div>

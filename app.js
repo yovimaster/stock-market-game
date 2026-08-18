@@ -118,6 +118,66 @@ function saveFavorites() {
 
 function isFavorite(symbol) { return favorites.has(symbol); }
 
+// ═══ BACKUP (export/import — localStorage is per-browser, so this is the
+// portable copy you can move between machines/browsers or keep as a safety net) ═
+function exportBackup() {
+  const payload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    portfolio,
+    favorites: [...favorites],
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), {
+    href: url,
+    download: `stockplay-backup-${new Date().toISOString().slice(0, 10)}.json`,
+  });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  toast('Backup downloaded', true);
+}
+
+function handleImportFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    e.target.value = '';
+    let data;
+    try {
+      data = JSON.parse(reader.result);
+      if (!data.portfolio || typeof data.portfolio.cash !== 'number' || typeof data.portfolio.holdings !== 'object') {
+        throw new Error('unrecognized format');
+      }
+    } catch (err) {
+      toast('Invalid backup file', false);
+      return;
+    }
+
+    if (!confirm('Import this backup? It will overwrite your current portfolio and favorites.')) return;
+
+    portfolio = {
+      cash: data.portfolio.cash,
+      holdings: data.portfolio.holdings ?? {},
+      txs: Array.isArray(data.portfolio.txs) ? data.portfolio.txs : [],
+      history: Array.isArray(data.portfolio.history) ? data.portfolio.history : [],
+    };
+    favorites = new Set(Array.isArray(data.favorites) ? data.favorites : []);
+
+    savePortfolio();
+    saveFavorites();
+    refreshHeader();
+    if (document.getElementById('tab-portfolio')?.classList.contains('active')) renderPortfolio();
+    if (document.getElementById('tab-favorites')?.classList.contains('active')) renderFavorites();
+    toast('Backup imported', true);
+  };
+  reader.readAsText(file);
+}
+
 // Snapshot current total value into history (call after any state-changing event)
 function recordSnapshot() {
   portfolio.history.push({ t: new Date().toISOString(), v: totalValue() });
@@ -125,19 +185,30 @@ function recordSnapshot() {
 }
 
 // ═══ API ════════════════════════════════════════════════════
-// Race 3 proxy strategies concurrently — take the first to succeed
+// Race several proxy strategies concurrently — take the first to succeed.
+// Public CORS proxies are individually flaky (rate limits, outages, or
+// rejecting the null origin a file:// page sends), so more independent
+// candidates means fewer stocks fall through to demo mode.
 async function apiFetch(url) {
   const candidates = [
     url,
-    `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
     `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+    `https://thingproxy.freeboard.io/fetch/${url}`,
   ];
   const tryOne = async u => {
-    const r = await fetch(u);
-    if (!r.ok) throw new Error(r.status);
-    const j = await r.json();
-    // allorigins wraps in {contents} when served as /get (not /raw); handle both
-    return j?.contents ? JSON.parse(j.contents) : j;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const r = await fetch(u, { signal: controller.signal });
+      if (!r.ok) throw new Error(String(r.status));
+      const j = await r.json();
+      // allorigins wraps in {contents} when served as /get (not /raw); handle both
+      return j?.contents ? JSON.parse(j.contents) : j;
+    } finally {
+      clearTimeout(timer);
+    }
   };
   return Promise.any(candidates.map(tryOne));
 }
