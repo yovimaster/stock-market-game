@@ -47,6 +47,20 @@ body {
   flex-shrink: 0;
 }
 
+.portfolio-select {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  outline: none;
+  max-width: 160px;
+  flex-shrink: 0;
+}
+
 .nav {
   display: flex;
   gap: 4px;
@@ -450,9 +464,22 @@ body {
 /* ── PORTFOLIO ───────────────────────────────────── */
 .pf-toolbar {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.pf-name {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.pf-toolbar-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .pstats {

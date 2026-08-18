@@ -84,24 +84,119 @@ let tradeMode      = 'buy';
 let activeChart    = null;    // stock-panel Chart.js instance
 let portfolioChart = null;    // portfolio-value-over-time Chart.js instance
 let pfRange        = 'ALL';
-let portfolio      = loadPortfolio();
+let portfolioStore = loadPortfolioStore();          // { activeId, portfolios: { id → portfolio } }
+let portfolio      = portfolioStore.portfolios[portfolioStore.activeId]; // active portfolio (live reference into the store)
 let favorites      = loadFavorites();
 
 // ═══ PERSISTENCE ═══════════════════════════════════════════
-function loadPortfolio() {
+function blankPortfolio(id, name) {
+  return { id, name, cash: START_CASH, holdings: {}, txs: [], history: [] };
+}
+
+function sanitizePortfolio(p, id) {
+  return {
+    id: p.id ?? id,
+    name: p.name || id,
+    cash: typeof p.cash === 'number' ? p.cash : START_CASH,
+    holdings: p.holdings && typeof p.holdings === 'object' ? p.holdings : {},
+    txs: Array.isArray(p.txs) ? p.txs : [],
+    history: Array.isArray(p.history) ? p.history : [],
+  };
+}
+
+function loadPortfolioStore() {
   try {
-    const raw = localStorage.getItem('sp_portfolio_v1');
+    const raw = localStorage.getItem('sp_portfolios_v2');
     if (raw) {
-      const p = JSON.parse(raw);
-      if (!Array.isArray(p.history)) p.history = [];
-      return p;
+      const store = JSON.parse(raw);
+      if (store?.portfolios && Object.keys(store.portfolios).length) {
+        const portfolios = {};
+        for (const [id, p] of Object.entries(store.portfolios)) portfolios[id] = sanitizePortfolio(p, id);
+        const activeId = portfolios[store.activeId] ? store.activeId : Object.keys(portfolios)[0];
+        return { activeId, portfolios };
+      }
     }
   } catch (_) {}
-  return { cash: START_CASH, holdings: {}, txs: [], history: [] };
+
+  // First run on this browser, or pre-multi-portfolio data — migrate the old single portfolio if present
+  let legacy = null;
+  try {
+    const raw = localStorage.getItem('sp_portfolio_v1');
+    if (raw) legacy = JSON.parse(raw);
+  } catch (_) {}
+
+  const id = 'p1';
+  const base = legacy ? sanitizePortfolio({ ...legacy, name: 'Portfolio 1' }, id) : blankPortfolio(id, 'Portfolio 1');
+  return { activeId: id, portfolios: { [id]: base } };
 }
 
 function savePortfolio() {
-  try { localStorage.setItem('sp_portfolio_v1', JSON.stringify(portfolio)); } catch (_) {}
+  try { localStorage.setItem('sp_portfolios_v2', JSON.stringify(portfolioStore)); } catch (_) {}
+}
+
+function nextPortfolioId() {
+  return 'p_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+// Switch the active portfolio, refresh anything on screen that shows portfolio data, and
+// take a fresh value snapshot so the newly-active portfolio's chart gets a point for "now".
+function switchPortfolio(id) {
+  if (!portfolioStore.portfolios[id]) return;
+  portfolioStore.activeId = id;
+  portfolio = portfolioStore.portfolios[id];
+  recordSnapshot();
+  savePortfolio();
+  closePanel();                 // avoid showing stale "your shares"/cash from the previous portfolio
+  refreshHeader();
+  renderPortfolioSwitcherOptions();
+  if (document.getElementById('tab-portfolio')?.classList.contains('active')) renderPortfolio();
+}
+
+function newPortfolio() {
+  const count = Object.keys(portfolioStore.portfolios).length;
+  if (count >= 8) { toast('Maximum of 8 portfolios reached', false); return; }
+  const name = prompt('Name for the new portfolio:', `Portfolio ${count + 1}`);
+  if (name === null) return;
+  const id = nextPortfolioId();
+  portfolioStore.portfolios[id] = blankPortfolio(id, name.trim() || `Portfolio ${count + 1}`);
+  switchPortfolio(id);
+  toast(`Created "${portfolioStore.portfolios[id].name}"`, true);
+}
+
+function renamePortfolio() {
+  const name = prompt('Rename portfolio:', portfolio.name);
+  if (name === null) return;
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  portfolio.name = trimmed;
+  savePortfolio();
+  renderPortfolioSwitcherOptions();
+  const label = document.getElementById('pf-name-label');
+  if (label) label.textContent = portfolio.name;
+}
+
+function deletePortfolio() {
+  if (Object.keys(portfolioStore.portfolios).length <= 1) {
+    toast('At least one portfolio must remain', false);
+    return;
+  }
+  if (!confirm(`Delete "${portfolio.name}"? This cannot be undone.`)) return;
+  delete portfolioStore.portfolios[portfolioStore.activeId];
+  switchPortfolio(Object.keys(portfolioStore.portfolios)[0]);
+  toast('Portfolio deleted', true);
+}
+
+function renderPortfolioSwitcherOptions() {
+  const sel = document.getElementById('portfolio-select');
+  if (!sel) return;
+  sel.innerHTML = '';
+  Object.values(portfolioStore.portfolios).forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.name;
+    opt.selected = p.id === portfolioStore.activeId;
+    sel.appendChild(opt);
+  });
 }
 
 function loadFavorites() {
@@ -122,9 +217,9 @@ function isFavorite(symbol) { return favorites.has(symbol); }
 // portable copy you can move between machines/browsers or keep as a safety net) ═
 function exportBackup() {
   const payload = {
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
-    portfolio,
+    portfolioStore,
     favorites: [...favorites],
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -148,32 +243,33 @@ function handleImportFile(e) {
   reader.onload = () => {
     e.target.value = '';
     let data;
-    try {
-      data = JSON.parse(reader.result);
-      if (!data.portfolio || typeof data.portfolio.cash !== 'number' || typeof data.portfolio.holdings !== 'object') {
-        throw new Error('unrecognized format');
-      }
-    } catch (err) {
+    try { data = JSON.parse(reader.result); } catch (err) { toast('Invalid backup file', false); return; }
+
+    if (data?.portfolioStore?.portfolios && Object.keys(data.portfolioStore.portfolios).length) {
+      // Full multi-portfolio backup — replaces everything, so confirm first.
+      if (!confirm('Import this backup? It will replace ALL your portfolios and favorites.')) return;
+      const portfolios = {};
+      for (const [id, p] of Object.entries(data.portfolioStore.portfolios)) portfolios[id] = sanitizePortfolio(p, id);
+      const activeId = portfolios[data.portfolioStore.activeId] ? data.portfolioStore.activeId : Object.keys(portfolios)[0];
+      portfolioStore = { activeId, portfolios };
+      portfolio = portfolioStore.portfolios[activeId];
+      favorites = new Set(Array.isArray(data.favorites) ? data.favorites : []);
+      saveFavorites();
+      switchPortfolio(activeId); // saves + re-renders everything
+      if (document.getElementById('tab-favorites')?.classList.contains('active')) renderFavorites();
+      toast('Backup imported', true);
+    } else if (data?.portfolio && typeof data.portfolio.cash === 'number') {
+      // Legacy single-portfolio backup — add it as a new portfolio instead of overwriting anything.
+      const id = nextPortfolioId();
+      portfolioStore.portfolios[id] = sanitizePortfolio({ ...data.portfolio, name: 'Imported Portfolio' }, id);
+      if (Array.isArray(data.favorites)) for (const sym of data.favorites) favorites.add(sym);
+      saveFavorites();
+      switchPortfolio(id);
+      if (document.getElementById('tab-favorites')?.classList.contains('active')) renderFavorites();
+      toast('Backup imported as a new portfolio', true);
+    } else {
       toast('Invalid backup file', false);
-      return;
     }
-
-    if (!confirm('Import this backup? It will overwrite your current portfolio and favorites.')) return;
-
-    portfolio = {
-      cash: data.portfolio.cash,
-      holdings: data.portfolio.holdings ?? {},
-      txs: Array.isArray(data.portfolio.txs) ? data.portfolio.txs : [],
-      history: Array.isArray(data.portfolio.history) ? data.portfolio.history : [],
-    };
-    favorites = new Set(Array.isArray(data.favorites) ? data.favorites : []);
-
-    savePortfolio();
-    saveFavorites();
-    refreshHeader();
-    if (document.getElementById('tab-portfolio')?.classList.contains('active')) renderPortfolio();
-    if (document.getElementById('tab-favorites')?.classList.contains('active')) renderFavorites();
-    toast('Backup imported', true);
   };
   reader.readAsText(file);
 }
@@ -256,6 +352,7 @@ async function fetchChartData(symbol, range, interval) {
 // ═══ INIT ═══════════════════════════════════════════════════
 async function init() {
   refreshHeader();
+  renderPortfolioSwitcherOptions();
   setupSearch();
   await loadMarket();
 }
@@ -847,6 +944,9 @@ function fmtPfLabel(d) {
 
 // ═══ PORTFOLIO RENDER ═══════════════════════════════════════
 function renderPortfolio() {
+  const nameLabel = document.getElementById('pf-name-label');
+  if (nameLabel) nameLabel.textContent = portfolio.name;
+
   const totVal  = totalValue();
   const pnl     = totVal - START_CASH;
   const pnlPct  = (pnl / START_CASH * 100).toFixed(2);
@@ -998,8 +1098,8 @@ function totalValue() {
 }
 
 function confirmReset() {
-  if (!confirm('Reset your entire portfolio back to $100,000? This cannot be undone.')) return;
-  portfolio = { cash: START_CASH, holdings: {}, txs: [], history: [] };
+  if (!confirm(`Reset "${portfolio.name}" back to $100,000? This cannot be undone.`)) return;
+  portfolio = portfolioStore.portfolios[portfolioStore.activeId] = blankPortfolio(portfolio.id, portfolio.name);
   recordSnapshot();
   savePortfolio();
   refreshHeader();

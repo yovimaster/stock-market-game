@@ -11,6 +11,7 @@
 
 <header class="header">
   <div class="logo">📈 StockPlay</div>
+  <select id="portfolio-select" class="portfolio-select" onchange="switchPortfolio(this.value)" title="Active portfolio"></select>
   <nav class="nav">
     <button class="nav-btn active" onclick="showTab('market')">Market</button>
     <button class="nav-btn" onclick="showTab('favorites')">Favorites</button>
@@ -56,9 +57,15 @@
   <!-- PORTFOLIO TAB -->
   <div id="tab-portfolio" class="view">
     <div class="pf-toolbar">
-      <input type="file" id="import-input" accept="application/json" style="display:none" onchange="handleImportFile(event)">
-      <button class="btn-reset" onclick="document.getElementById('import-input').click()">⬆ Import Backup</button>
-      <button class="btn-reset" onclick="exportBackup()">⬇ Export Backup</button>
+      <div class="pf-name" id="pf-name-label"></div>
+      <div class="pf-toolbar-actions">
+        <button class="btn-reset" onclick="newPortfolio()">+ New Portfolio</button>
+        <button class="btn-reset" onclick="renamePortfolio()">Rename</button>
+        <button class="btn-reset" onclick="deletePortfolio()">Delete</button>
+        <input type="file" id="import-input" accept="application/json" style="display:none" onchange="handleImportFile(event)">
+        <button class="btn-reset" onclick="document.getElementById('import-input').click()">⬆ Import Backup</button>
+        <button class="btn-reset" onclick="exportBackup()">⬇ Export Backup</button>
+      </div>
     </div>
     <div class="pstats" id="p-stats"></div>
     <div id="p-chart"></div>
