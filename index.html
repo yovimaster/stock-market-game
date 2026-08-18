@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StockPlay — Virtual Trading</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">📈 StockPlay</div>
+  <nav class="nav">
+    <button class="nav-btn active" onclick="showTab('market')">Market</button>
+    <button class="nav-btn" onclick="showTab('favorites')">Favorites</button>
+    <button class="nav-btn" onclick="showTab('portfolio')">Portfolio</button>
+  </nav>
+  <div class="header-stats">
+    <div class="hstat">
+      <div class="hstat-label">Cash</div>
+      <div class="hstat-value" id="h-cash">$100,000.00</div>
+    </div>
+    <div class="hstat">
+      <div class="hstat-label">Total Value</div>
+      <div class="hstat-value" id="h-total">$100,000.00</div>
+    </div>
+    <div class="hstat">
+      <div class="hstat-label">P&amp;L</div>
+      <div class="hstat-value" id="h-pnl">$0.00</div>
+    </div>
+    <div id="data-pill" style="font-size:11px;padding:3px 9px;border-radius:20px;border:1px solid var(--border);color:var(--muted);white-space:nowrap">⏳ Loading…</div>
+  </div>
+</header>
+
+<main class="main">
+
+  <!-- MARKET TAB -->
+  <div id="tab-market" class="view active">
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input id="search" class="search-input" type="text" placeholder="Search by symbol or name…" autocomplete="off" spellcheck="false">
+      <div id="search-dd" class="search-dropdown"></div>
+    </div>
+    <div id="err-box"></div>
+    <div id="market-body">
+      <div class="loader"><div class="spin"></div> Fetching market data…</div>
+    </div>
+  </div>
+
+  <!-- FAVORITES TAB -->
+  <div id="tab-favorites" class="view">
+    <div id="favorites-body"></div>
+  </div>
+
+  <!-- PORTFOLIO TAB -->
+  <div id="tab-portfolio" class="view">
+    <div class="pstats" id="p-stats"></div>
+    <div id="p-chart"></div>
+    <div id="p-holdings"></div>
+    <div id="p-tx"></div>
+  </div>
+
+</main>
+
+<!-- STOCK SIDE PANEL -->
+<div class="overlay" id="overlay" onclick="handleOverlayClick(event)">
+  <div class="panel" id="panel">
+    <button class="panel-close" onclick="closePanel()">✕</button>
+    <div id="panel-inner"></div>
+  </div>
+</div>
+
+<!-- TOASTS -->
+<div class="toasts" id="toasts"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
